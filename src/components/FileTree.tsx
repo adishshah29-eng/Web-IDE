@@ -2,10 +2,20 @@
 
 import { useState } from "react";
 import type { WorkspaceNode } from "@/lib/types";
-import { IconChevron, IconFolder, IconFile, IconPlus, IconFolderPlus, IconTrash } from "@/components/icons";
+import {
+  IconChevron,
+  IconFolder,
+  IconFile,
+  IconPlus,
+  IconFolderPlus,
+  IconTrash,
+  IconTemplate,
+} from "@/components/icons";
 import { useDialog } from "@/components/DialogProvider";
 import { useToast } from "@/components/ToastProvider";
 import { fileIconColor } from "@/lib/fileIcons";
+import TemplatePicker from "@/components/TemplatePicker";
+import type { Boilerplate } from "@/lib/boilerplates";
 
 export interface OpResult {
   ok: boolean;
@@ -16,7 +26,12 @@ interface FileTreeProps {
   tree: WorkspaceNode[];
   activeFileId: string | null;
   onOpenFile: (file: WorkspaceNode) => void;
-  onCreateNode: (parentId: string | null, name: string, type: "file" | "folder") => Promise<OpResult>;
+  onCreateNode: (
+    parentId: string | null,
+    name: string,
+    type: "file" | "folder",
+    content?: string
+  ) => Promise<OpResult>;
   onRenameNode: (id: string, name: string) => Promise<OpResult>;
   onDeleteNode: (id: string) => Promise<OpResult>;
 }
@@ -31,6 +46,8 @@ export default function FileTree({
 }: FileTreeProps) {
   const dialog = useDialog();
   const toast = useToast();
+  // undefined = closed, null = picking for the root, string = picking inside that folder id
+  const [templateParent, setTemplateParent] = useState<string | null | undefined>(undefined);
 
   const handleCreate = async (parentId: string | null, type: "file" | "folder") => {
     const name = await dialog.prompt({
@@ -41,6 +58,20 @@ export default function FileTree({
     });
     if (!name) return;
     const result = await onCreateNode(parentId, name, type);
+    if (!result.ok) toast.show(result.error ?? "Couldn't create it.", "error");
+  };
+
+  const handlePickTemplate = async (template: Boilerplate) => {
+    const parentId = templateParent ?? null;
+    setTemplateParent(undefined);
+    const name = await dialog.prompt({
+      title: "New File",
+      label: "Name",
+      defaultValue: template.filename,
+      confirmLabel: "Create",
+    });
+    if (!name) return;
+    const result = await onCreateNode(parentId, name, "file", template.content);
     if (!result.ok) toast.show(result.error ?? "Couldn't create it.", "error");
   };
 
@@ -67,6 +98,14 @@ export default function FileTree({
           >
             <IconFolderPlus className="w-3.5 h-3.5" />
           </button>
+          <button
+            title="New From Template"
+            aria-label="New From Template"
+            className="p-1 rounded hover:bg-black/[.06] dark:hover:bg-white/[.08] hover:text-(--text-primary)"
+            onClick={() => setTemplateParent(null)}
+          >
+            <IconTemplate className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto pb-2">
@@ -85,11 +124,16 @@ export default function FileTree({
             activeFileId={activeFileId}
             onOpenFile={onOpenFile}
             onCreate={handleCreate}
+            onCreateFromTemplate={(parentId) => setTemplateParent(parentId)}
             onRenameNode={onRenameNode}
             onDeleteNode={onDeleteNode}
           />
         ))}
       </div>
+
+      {templateParent !== undefined && (
+        <TemplatePicker onPick={handlePickTemplate} onClose={() => setTemplateParent(undefined)} />
+      )}
     </div>
   );
 }
@@ -100,6 +144,7 @@ function FileTreeItem({
   activeFileId,
   onOpenFile,
   onCreate,
+  onCreateFromTemplate,
   onRenameNode,
   onDeleteNode,
 }: {
@@ -108,6 +153,7 @@ function FileTreeItem({
   activeFileId: string | null;
   onOpenFile: (file: WorkspaceNode) => void;
   onCreate: (parentId: string | null, type: "file" | "folder") => void;
+  onCreateFromTemplate: (parentId: string) => void;
   onRenameNode: (id: string, name: string) => Promise<OpResult>;
   onDeleteNode: (id: string) => Promise<OpResult>;
 }) {
@@ -224,6 +270,18 @@ function FileTreeItem({
               >
                 <IconFolderPlus className="w-3 h-3" />
               </button>
+              <button
+                title="New From Template"
+                aria-label="New From Template"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded(true);
+                  onCreateFromTemplate(node.id);
+                }}
+                className="p-0.5 rounded hover:bg-black/10"
+              >
+                <IconTemplate className="w-3 h-3" />
+              </button>
             </>
           )}
           <button
@@ -250,6 +308,7 @@ function FileTreeItem({
               activeFileId={activeFileId}
               onOpenFile={onOpenFile}
               onCreate={onCreate}
+              onCreateFromTemplate={onCreateFromTemplate}
               onRenameNode={onRenameNode}
               onDeleteNode={onDeleteNode}
             />

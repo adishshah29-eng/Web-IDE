@@ -321,14 +321,29 @@ export default function LocalFolderPage() {
   useEffect(() => clearAutoSaveTimer, []);
 
   const createNode = useCallback(
-    async (parentId: string | null, name: string, type: "file" | "folder"): Promise<OpResult> => {
+    async (
+      parentId: string | null,
+      name: string,
+      type: "file" | "folder",
+      content?: string
+    ): Promise<OpResult> => {
       const parentHandle = parentId ? entriesRef.current.get(parentId)?.handle : dirHandle;
       if (!parentHandle || parentHandle.kind !== "directory") {
         return { ok: false, error: "Couldn't find that folder." };
       }
       try {
-        await createLocalEntry(parentHandle, name, type);
+        const handle = await createLocalEntry(parentHandle, name, type);
+        if (type === "file" && content) {
+          await writeLocalFile(handle as FileSystemFileHandle, content);
+        }
         await refreshTree(dirHandle!);
+        if (type === "file") {
+          const id = parentId ? `${parentId}/${name}` : name;
+          setActiveId(id);
+          setOpenFiles((prev) =>
+            prev.some((f) => f.id === id) ? prev : [...prev, { id, name, content: content ?? "", dirty: false }]
+          );
+        }
         return { ok: true };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : "Couldn't create it." };

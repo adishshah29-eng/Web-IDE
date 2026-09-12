@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
-  const { project_id, parent_id, name, type } = await req.json();
+  const { project_id, parent_id, name, type, content } = await req.json();
 
   if (!project_id || !name || (type !== "file" && type !== "folder")) {
     return NextResponse.json(
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       parent_id: parent_id ?? null,
       name,
       type,
-      content: type === "file" ? "" : null,
+      content: type === "file" ? (content ?? "") : null,
     })
     .select()
     .single();

@@ -103,6 +103,16 @@ export function IconTrash({ className = "" }: IconProps) {
   );
 }
 
+export function IconTemplate({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" className={`${base} ${className}`} fill="none">
+      <rect x="2" y="2" width="12" height="12" rx="1.3" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M2 6.2H14" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M6 6.2V14" stroke="currentColor" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
 export function IconBack({ className = "" }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" className={`${base} ${className}`} fill="none">

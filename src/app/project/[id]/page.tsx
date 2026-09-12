@@ -234,14 +234,28 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   useEffect(() => clearAutoSaveTimer, []);
 
   const createNode = useCallback(
-    async (parentId: string | null, name: string, type: "file" | "folder"): Promise<OpResult> => {
+    async (
+      parentId: string | null,
+      name: string,
+      type: "file" | "folder",
+      content?: string
+    ): Promise<OpResult> => {
       const res = await fetch("/api/files", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId, parent_id: parentId, name, type }),
+        body: JSON.stringify({ project_id: projectId, parent_id: parentId, name, type, content }),
       });
       if (!res.ok) return { ok: false, error: await parseErrorBody(res) };
+      const created = await res.json();
       loadTree();
+      if (type === "file") {
+        setActiveId(created.id);
+        setOpenFiles((prev) =>
+          prev.some((f) => f.id === created.id)
+            ? prev
+            : [...prev, { id: created.id, name: created.name, content: created.content ?? "", dirty: false }]
+        );
+      }
       return { ok: true };
     },
     [projectId, loadTree]
