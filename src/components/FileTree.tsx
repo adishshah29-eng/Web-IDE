@@ -20,6 +20,8 @@ import type { Boilerplate } from "@/lib/boilerplates";
 export interface OpResult {
   ok: boolean;
   error?: string;
+  /** The created node's id — set on a successful create, used by callers (e.g. the agent) that need to address the new node right after creating it. */
+  id?: string;
 }
 
 interface FileTreeProps {

@@ -7,17 +7,31 @@ import Tabs, { type OpenTab } from "@/components/Tabs";
 import Editor, { type CursorPosition } from "@/components/Editor";
 import OutputPanel, { type RunResult } from "@/components/OutputPanel";
 import PreviewPanel from "@/components/PreviewPanel";
+import AgentPanel from "@/components/AgentPanel";
+import TerminalPanel from "@/components/TerminalPanel";
+import ActivityBar from "@/components/ActivityBar";
 import StatusBar from "@/components/StatusBar";
 import { findNode, type Project, type TreeNode, type WorkspaceNode } from "@/lib/types";
 import { isRunnable } from "@/lib/languageMap";
 import { parseErrorBody } from "@/lib/http";
-import { IconBack, IconPlay } from "@/components/icons";
+import { IconBack, IconPlay, IconMaximize, IconMinimize, IconClose } from "@/components/icons";
 import { useToast } from "@/components/ToastProvider";
 import { useDialog } from "@/components/DialogProvider";
 import { useResizableWidth } from "@/lib/useResizableWidth";
+import { useResizableHeight } from "@/lib/useResizableHeight";
 import { flattenTreeWithPaths, hasHtmlEntry, isPreviewableFile, pickPreviewEntry } from "@/lib/previewFiles";
+import type { AgentFileContext } from "@/lib/agent/useAgent";
+import { ensureParentFolder } from "@/lib/agent/pathOps";
+import { getWebContainer, subscribeDevServerUrl } from "@/lib/webcontainer/instance";
+import { buildFileSystemTree } from "@/lib/webcontainer/fileTree";
 
 const AUTOSAVE_DELAY_MS = 900;
+
+const PANEL_LABELS: Record<"console" | "preview" | "agent", string> = {
+  console: "Console",
+  preview: "Preview",
+  agent: "Agent",
+};
 
 function TrafficLights() {
   return (
@@ -49,16 +63,41 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   useEffect(() => {
     openFilesRef.current = openFiles;
   });
+  // The agent's tool closures are created once per run() call and don't pick
+  // up later re-renders mid-run — reading through a ref (not the `tree`
+  // state variable) ensures a write_file followed by run_code in the same
+  // turn sees the just-written content instead of a stale pre-write snapshot.
+  const treeRef = useRef(tree);
+  useEffect(() => {
+    treeRef.current = tree;
+  });
 
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [rightPanel, setRightPanel] = useState<"console" | "preview">("console");
+  const [rightPanel, setRightPanel] = useState<"console" | "preview" | "agent">("console");
+  const [rightPanelVisible, setRightPanelVisible] = useState(true);
+  const [terminalVisible, setTerminalVisible] = useState(false);
+  const [devServerUrl, setDevServerUrl] = useState<string | null>(null);
+  useEffect(() => subscribeDevServerUrl(setDevServerUrl), []);
+  const [panelMaximized, setPanelMaximized] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
+
+  const selectRightPanel = (panel: "console" | "preview" | "agent") => {
+    if (panel === rightPanel && rightPanelVisible) {
+      setRightPanelVisible(false);
+      setPanelMaximized(false);
+    } else {
+      setRightPanel(panel);
+      setRightPanelVisible(true);
+    }
+  };
   const [cursor, setCursor] = useState<CursorPosition | null>(null);
 
   const sidebarResize = useResizableWidth("ide.sidebarWidth", 240, 160, 480, "right");
   const consoleResize = useResizableWidth("ide.consoleWidth", 384, 240, 640, "left");
+  const terminalResize = useResizableHeight("ide.terminalHeight", 260, 140, 560);
 
   const filePaths = useMemo(() => flattenTreeWithPaths(tree), [tree]);
 
@@ -102,6 +141,11 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     if (seq !== loadSeq.current) return;
     setProject(data.project);
     setTree(data.tree);
+    // Assigned synchronously (not just via the mirroring effect) so a caller
+    // that awaits loadTree() and immediately reads treeRef.current — like
+    // the agent's applyWrite — sees the update without waiting on React's
+    // next render/effect cycle.
+    treeRef.current = data.tree;
   }, [projectId]);
 
   useEffect(() => {
@@ -256,7 +300,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
             : [...prev, { id: created.id, name: created.name, content: created.content ?? "", dirty: false }]
         );
       }
-      return { ok: true };
+      return { ok: true, id: created.id };
     },
     [projectId, loadTree]
   );
@@ -327,6 +371,114 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     return () => window.removeEventListener("keydown", handler);
   }, [activeId, saveActive, closeTab, createFileAtRoot]);
 
+  const agentCtx = useMemo<AgentFileContext>(
+    () => ({
+      listFiles: () => flattenTreeWithPaths(treeRef.current).map((f) => f.path),
+      readFile: async (path) => {
+        const match = flattenTreeWithPaths(treeRef.current).find((f) => f.path === path);
+        if (!match) throw new Error(`No file at "${path}".`);
+        const open = openFilesRef.current.find((f) => f.id === match.node.id);
+        return open ? open.content : (match.node.content ?? "");
+      },
+      runFile: async (path) => {
+        const match = flattenTreeWithPaths(treeRef.current).find((f) => f.path === path);
+        if (!match) throw new Error(`No file at "${path}".`);
+        if (!isRunnable(match.node.name)) throw new Error(`"${path}" isn't a runnable file type.`);
+        const open = openFilesRef.current.find((f) => f.id === match.node.id);
+        const content = open ? open.content : (match.node.content ?? "");
+        const res = await fetch("/api/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: match.node.name, content }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Run failed.");
+        return data;
+      },
+      getContent: async (path) => {
+        const match = flattenTreeWithPaths(treeRef.current).find((f) => f.path === path);
+        if (!match) return null;
+        const open = openFilesRef.current.find((f) => f.id === match.node.id);
+        return open ? open.content : (match.node.content ?? "");
+      },
+      applyWrite: async (path, content) => {
+        // The change is about to land somewhere the user can actually see it —
+        // a maximized console/agent/terminal panel currently hides the editor
+        // and sidebar entirely, which is the main way an agent-created or
+        // agent-edited file looks like it "vanished".
+        setPanelMaximized(false);
+        setSidebarVisible(true);
+
+        const existing = flattenTreeWithPaths(treeRef.current).find((f) => f.path === path);
+        if (existing) {
+          const res = await fetch("/api/files", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: existing.node.id, content }),
+          });
+          if (!res.ok) throw new Error(await parseErrorBody(res));
+          setActiveId(existing.node.id);
+          setOpenFiles((prev) =>
+            prev.some((f) => f.id === existing.node.id)
+              ? prev.map((f) => (f.id === existing.node.id ? { ...f, content, dirty: false } : f))
+              : [...prev, { id: existing.node.id, name: existing.node.name, content, dirty: false }]
+          );
+          await loadTree();
+          return;
+        }
+        const { parentId, leafName, error } = await ensureParentFolder(treeRef.current, path, createNode);
+        if (error) throw new Error(error);
+        const result = await createNode(parentId, leafName, "file", content);
+        if (!result.ok) throw new Error(result.error || "Couldn't create the file.");
+        await loadTree();
+      },
+      applyDelete: async (path) => {
+        const match = flattenTreeWithPaths(treeRef.current).find((f) => f.path === path);
+        if (!match) throw new Error(`No file at "${path}".`);
+        const result = await deleteNode(match.node.id);
+        if (!result.ok) throw new Error(result.error || "Couldn't delete the file.");
+        setOpenFiles((prev) => prev.filter((f) => f.id !== match.node.id));
+        await loadTree();
+      },
+      runCommand: async (command) => {
+        const wc = await getWebContainer();
+        const files = await buildFileSystemTree({
+          listFiles: () => flattenTreeWithPaths(treeRef.current).map((f) => f.path),
+          getContent: async (path) => {
+            const match = flattenTreeWithPaths(treeRef.current).find((f) => f.path === path);
+            if (!match) return null;
+            const open = openFilesRef.current.find((f) => f.id === match.node.id);
+            return open ? open.content : (match.node.content ?? "");
+          },
+        });
+        await wc.mount(files);
+
+        const parts = command.trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) throw new Error("Empty command.");
+        const [cmd, ...args] = parts;
+        const proc = await wc.spawn(cmd, args);
+
+        let output = "";
+        const reader = proc.output.getReader();
+        void (async () => {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            output += value;
+          }
+        })();
+
+        const exitCode = await Promise.race([
+          proc.exit,
+          new Promise<number>((resolve) => setTimeout(() => resolve(-1), 20_000)),
+        ]);
+
+        return { stdout: output.slice(0, 4000), exitCode, timedOut: exitCode === -1 };
+      },
+    }),
+    [createNode, deleteNode, loadTree]
+  );
+
   const runActive = async () => {
     const file = openFiles.find((f) => f.id === activeId);
     if (!file) return;
@@ -396,14 +548,14 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
   return (
     <div className="h-screen flex flex-col bg-(--surface-panel) text-(--text-primary)">
-      <div className="h-11 grid grid-cols-3 items-center px-3 border-b border-(--border-hairline) bg-(--surface-toolbar) shrink-0">
+      <div className="h-11 grid grid-cols-3 items-center px-3 border-b border-(--border-hairline) bg-(--titlebar-bg) shrink-0">
         <div className="flex items-center gap-3">
           <TrafficLights />
           <Link
             href="/"
             title="Back to Projects"
             aria-label="Back to Projects"
-            className="text-(--text-tertiary) hover:text-(--text-primary) p-1 rounded hover:bg-black/5 dark:hover:bg-white/5"
+            className="text-(--text-tertiary) hover:text-(--text-primary) p-1 rounded hover:bg-white/5"
           >
             <IconBack className="w-3.5 h-3.5" />
           </Link>
@@ -418,7 +570,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           <button
             onClick={runActive}
             disabled={!activeFile || !isRunnable(activeFile.name) || running}
-            className="flex items-center gap-1.5 bg-(--accent-run) hover:bg-(--accent-run-hover) disabled:bg-black/[.06] disabled:dark:bg-white/[.08] disabled:text-(--text-tertiary) text-white text-[12.5px] font-medium h-7 px-3 rounded-md transition-colors"
+            className="flex items-center gap-1.5 bg-(--accent-run) hover:bg-(--accent-run-hover) disabled:bg-white/[.06] disabled:text-(--text-tertiary) text-white text-[12.5px] font-medium h-7 px-3 rounded-md transition-colors"
           >
             <IconPlay className="w-3 h-3" />
             {running ? "Running…" : "Run"}
@@ -427,91 +579,144 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {sidebarVisible && (
-          <>
-            <div
-              style={{ width: sidebarResize.width }}
-              className="border-r border-(--border-hairline) overflow-y-auto shrink-0 bg-(--surface-sidebar)"
-            >
-              <FileTree
-                tree={tree}
-                activeFileId={activeId}
-                onOpenFile={openFile}
-                onCreateNode={createNode}
-                onRenameNode={renameNode}
-                onDeleteNode={deleteNode}
-              />
+        <ActivityBar
+          explorerOpen={sidebarVisible}
+          onToggleExplorer={() => setSidebarVisible((v) => !v)}
+          rightPanelKey={rightPanel}
+          rightPanelOpen={rightPanelVisible}
+          onSelectRightPanel={selectRightPanel}
+          terminalOpen={terminalVisible}
+          onToggleTerminal={() => setTerminalVisible((v) => !v)}
+          previewDisabled={!canPreview && !devServerUrl}
+          agentBusy={agentBusy}
+        />
+
+        {!panelMaximized && (
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <div className="flex-1 flex min-h-0">
+              {sidebarVisible && (
+                <>
+                  <div
+                    style={{ width: sidebarResize.width }}
+                    className="border-r border-(--border-hairline) overflow-y-auto shrink-0 bg-(--surface-sidebar)"
+                  >
+                    <FileTree
+                      tree={tree}
+                      activeFileId={activeId}
+                      onOpenFile={openFile}
+                      onCreateNode={createNode}
+                      onRenameNode={renameNode}
+                      onDeleteNode={deleteNode}
+                    />
+                  </div>
+                  <div
+                    onMouseDown={sidebarResize.startDrag}
+                    title="Drag to resize"
+                    className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
+                  >
+                    <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
+                  </div>
+                </>
+              )}
+
+              <div className="flex-1 flex flex-col min-w-0">
+                <Tabs
+                  tabs={openFiles.map(({ id, name, dirty }) => ({ id, name, dirty }))}
+                  activeId={activeId}
+                  onSelect={setActiveId}
+                  onClose={closeTab}
+                />
+                <div className="flex-1 min-h-0">
+                  {activeFile ? (
+                    <Editor
+                      key={activeFile.id}
+                      filename={activeFile.name}
+                      value={activeFile.content}
+                      onChange={updateContent}
+                      onCursorChange={setCursor}
+                    />
+                  ) : (
+                    <div className="h-full flex items-center justify-center bg-(--surface-editor) text-neutral-600 text-sm">
+                      {openFiles.length === 0 && tree.length === 0
+                        ? "Add a file to get started"
+                        : "Select a file to start editing"}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <div
-              onMouseDown={sidebarResize.startDrag}
-              title="Drag to resize"
-              className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
-            >
-              <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
-            </div>
-          </>
+
+            {terminalVisible && (
+              <>
+                <div
+                  onMouseDown={terminalResize.startDrag}
+                  title="Drag to resize"
+                  className="h-2 -my-0.5 shrink-0 cursor-row-resize group relative z-10"
+                >
+                  <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
+                </div>
+                <div
+                  style={{ height: terminalResize.height }}
+                  className="shrink-0 flex flex-col border-t border-(--border-hairline)"
+                >
+                  <div className="flex items-center justify-between h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide text-(--text-secondary)">
+                    <span className="px-3">Terminal</span>
+                    <button
+                      title="Close terminal"
+                      aria-label="Close terminal"
+                      onClick={() => setTerminalVisible(false)}
+                      className="mr-2 p-1 rounded normal-case text-(--text-tertiary) hover:bg-white/10 hover:text-(--text-primary)"
+                    >
+                      <IconClose className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <TerminalPanel source={agentCtx} onSync={loadTree} />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         )}
 
-        <div className="flex-1 flex flex-col min-w-0">
-          <Tabs
-            tabs={openFiles.map(({ id, name, dirty }) => ({ id, name, dirty }))}
-            activeId={activeId}
-            onSelect={setActiveId}
-            onClose={closeTab}
-          />
-          <div className="flex-1 min-h-0">
-            {activeFile ? (
-              <Editor
-                key={activeFile.id}
-                filename={activeFile.name}
-                value={activeFile.content}
-                onChange={updateContent}
-                onCursorChange={setCursor}
-              />
-            ) : (
-              <div className="h-full flex items-center justify-center bg-(--surface-editor) text-neutral-600 text-sm">
-                {openFiles.length === 0 && tree.length === 0
-                  ? "Add a file to get started"
-                  : "Select a file to start editing"}
-              </div>
-            )}
+        {!panelMaximized && rightPanelVisible && (
+          <div
+            onMouseDown={consoleResize.startDrag}
+            title="Drag to resize"
+            className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
+          >
+            <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
           </div>
-          <StatusBar filename={activeFile?.name ?? null} cursor={activeFile ? cursor : null} />
-        </div>
-
-        <div
-          onMouseDown={consoleResize.startDrag}
-          title="Drag to resize"
-          className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
-        >
-          <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
-        </div>
-        <div style={{ width: consoleResize.width }} className="shrink-0 flex flex-col">
-          <div className="flex items-center h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide">
-            <button
-              onClick={() => setRightPanel("console")}
-              className={`px-3 h-full ${rightPanel === "console" ? "text-(--text-primary) border-b-2 border-(--accent) -mb-px" : "text-(--text-tertiary)"}`}
-            >
-              Console
-            </button>
-            <button
-              onClick={() => canPreview && setRightPanel("preview")}
-              disabled={!canPreview}
-              title={canPreview ? undefined : "Add an .html file to enable preview"}
-              className={`px-3 h-full disabled:opacity-40 ${rightPanel === "preview" ? "text-(--text-primary) border-b-2 border-(--accent) -mb-px" : "text-(--text-tertiary)"}`}
-            >
-              Preview
-            </button>
+        )}
+        {rightPanelVisible && (
+          <div
+            style={panelMaximized ? undefined : { width: consoleResize.width }}
+            className={`flex flex-col ${panelMaximized ? "flex-1 min-w-0" : "shrink-0"}`}
+          >
+            <div className="flex items-center justify-between h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide text-(--text-secondary)">
+              <span className="px-3">{PANEL_LABELS[rightPanel]}</span>
+              <button
+                title={panelMaximized ? "Restore layout" : "Maximize panel"}
+                aria-label={panelMaximized ? "Restore layout" : "Maximize panel"}
+                onClick={() => setPanelMaximized((v) => !v)}
+                className="mr-2 p-1 rounded normal-case text-(--text-tertiary) hover:bg-white/10 hover:text-(--text-primary)"
+              >
+                {panelMaximized ? <IconMinimize className="w-3.5 h-3.5" /> : <IconMaximize className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            <div className="flex-1 min-h-0">
+              {rightPanel === "console" ? (
+                <OutputPanel running={running} result={runResult} />
+              ) : rightPanel === "preview" ? (
+                <PreviewPanel manifest={previewManifest} entryPath={previewEntryPath} devServerUrl={devServerUrl} />
+              ) : (
+                <AgentPanel ctx={agentCtx} storageKey={projectId} onRunningChange={setAgentBusy} />
+              )}
+            </div>
           </div>
-          <div className="flex-1 min-h-0">
-            {rightPanel === "console" ? (
-              <OutputPanel running={running} result={runResult} />
-            ) : (
-              <PreviewPanel manifest={previewManifest} entryPath={previewEntryPath} />
-            )}
-          </div>
-        </div>
+        )}
       </div>
+      <StatusBar filename={activeFile?.name ?? null} cursor={activeFile ? cursor : null} />
     </div>
   );
 }

@@ -113,6 +113,111 @@ export function IconTemplate({ className = "" }: IconProps) {
   );
 }
 
+export function IconExternalLink({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" className={`${base} ${className}`} fill="none">
+      <path
+        d="M6.5 3H4.3C3.58 3 3 3.58 3 4.3v7.4C3 12.42 3.58 13 4.3 13h7.4c.72 0 1.3-.58 1.3-1.3V9.5"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M9.5 3H13v3.5M13 3L7.5 8.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function IconMaximize({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" className={`${base} ${className}`} fill="none">
+      <path
+        d="M6 3H3v3M10 3h3v3M6 13H3v-3M10 13h3v-3"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function IconMinimize({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" className={`${base} ${className}`} fill="none">
+      <path
+        d="M3 6h3V3M13 6h-3V3M3 10h3v3M13 10h-3v3"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function IconExplorer({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${base} ${className}`} fill="none">
+      <path
+        d="M4 6a1 1 0 011-1h4.5l1.8 2H19a1 1 0 011 1v9a1 1 0 01-1 1H5a1 1 0 01-1-1V6z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function IconConsoleActivity({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${base} ${className}`} fill="none">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M6.5 9H17.5M6.5 12.5H14M6.5 16H11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function IconPreviewActivity({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${base} ${className}`} fill="none">
+      <path
+        d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+export function IconAgentActivity({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${base} ${className}`} fill="none">
+      <path
+        d="M4 6.5A2.5 2.5 0 016.5 4h11A2.5 2.5 0 0120 6.5v7a2.5 2.5 0 01-2.5 2.5H9l-4 3.5v-3.5H6.5A2.5 2.5 0 014 13.5v-7z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="8.75" cy="10" r="1" fill="currentColor" />
+      <circle cx="12" cy="10" r="1" fill="currentColor" />
+      <circle cx="15.25" cy="10" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function IconTerminalActivity({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={`${base} ${className}`} fill="none">
+      <rect x="3" y="4" width="18" height="16" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7 9.5L10.5 12.5L7 15.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12.5 15.5H17.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function IconBack({ className = "" }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" className={`${base} ${className}`} fill="none">
