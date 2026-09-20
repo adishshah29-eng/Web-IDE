@@ -8,6 +8,7 @@ import Editor, { type CursorPosition } from "@/components/Editor";
 import OutputPanel, { type RunResult } from "@/components/OutputPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import StatusBar from "@/components/StatusBar";
+import MobileTabBar, { type MobilePanel } from "@/components/MobileTabBar";
 import { findNode, type Project, type TreeNode, type WorkspaceNode } from "@/lib/types";
 import { isRunnable } from "@/lib/languageMap";
 import { parseErrorBody } from "@/lib/http";
@@ -56,6 +57,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [rightPanel, setRightPanel] = useState<"console" | "preview">("console");
   const [cursor, setCursor] = useState<CursorPosition | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("editor");
 
   const sidebarResize = useResizableWidth("ide.sidebarWidth", 240, 160, 480, "right");
   const consoleResize = useResizableWidth("ide.consoleWidth", 384, 240, 640, "left");
@@ -159,6 +161,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       if (prev.some((f) => f.id === node.id)) return prev;
       return [...prev, { id: node.id, name: node.name, content: full?.content ?? "", dirty: false }];
     });
+    setMobilePanel("editor");
   };
 
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -333,6 +336,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     await saveActive();
     setRunning(true);
     setRunResult(null);
+    setMobilePanel("console");
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -361,18 +365,18 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
   if (loading) {
     return (
-      <div className="h-screen flex flex-col bg-(--surface-panel)">
+      <div className="h-dvh flex flex-col bg-(--surface-panel)">
         <div className="h-11 flex items-center px-3 border-b border-(--border-hairline) bg-(--surface-toolbar) shrink-0">
           <TrafficLights />
         </div>
         <div className="flex flex-1 min-h-0">
-          <div className="w-60 border-r border-(--border-hairline) bg-(--surface-sidebar) p-3 space-y-2">
+          <div className="hidden md:block w-60 border-r border-(--border-hairline) bg-(--surface-sidebar) p-3 space-y-2">
             {[85, 60, 70, 45, 65].map((w, i) => (
               <div key={i} className="h-3 rounded bg-black/[.06] dark:bg-white/[.08] animate-pulse" style={{ width: `${w}%` }} />
             ))}
           </div>
           <div className="flex-1 bg-(--surface-editor)" />
-          <div className="w-96 border-l border-(--border-hairline) bg-(--surface-editor)" />
+          <div className="hidden md:block w-96 border-l border-(--border-hairline) bg-(--surface-editor)" />
         </div>
       </div>
     );
@@ -380,7 +384,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-(--surface-panel) text-(--text-primary) p-6 text-sm">
+      <div className="min-h-dvh bg-(--surface-panel) text-(--text-primary) p-6 text-sm">
         <div className="max-w-md">
           <p className="text-(--accent-stop) mb-3">{error}</p>
           <Link
@@ -395,10 +399,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   }
 
   return (
-    <div className="h-screen flex flex-col bg-(--surface-panel) text-(--text-primary)">
-      <div className="h-11 grid grid-cols-3 items-center px-3 border-b border-(--border-hairline) bg-(--surface-toolbar) shrink-0">
+    <div className="h-dvh flex flex-col bg-(--surface-panel) text-(--text-primary)">
+      <div className="h-11 grid grid-cols-[auto_1fr_auto] md:grid-cols-3 items-center px-3 border-b border-(--border-hairline) bg-(--surface-toolbar) shrink-0">
         <div className="flex items-center gap-3">
-          <TrafficLights />
+          <span className="hidden sm:flex">
+            <TrafficLights />
+          </span>
           <Link
             href="/"
             title="Back to Projects"
@@ -427,32 +433,32 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {sidebarVisible && (
-          <>
-            <div
-              style={{ width: sidebarResize.width }}
-              className="border-r border-(--border-hairline) overflow-y-auto shrink-0 bg-(--surface-sidebar)"
-            >
-              <FileTree
-                tree={tree}
-                activeFileId={activeId}
-                onOpenFile={openFile}
-                onCreateNode={createNode}
-                onRenameNode={renameNode}
-                onDeleteNode={deleteNode}
-              />
-            </div>
-            <div
-              onMouseDown={sidebarResize.startDrag}
-              title="Drag to resize"
-              className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
-            >
-              <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
-            </div>
-          </>
-        )}
+        <div
+          style={{ width: sidebarResize.width }}
+          className={`${mobilePanel === "files" ? "block" : "hidden"} ${
+            sidebarVisible ? "md:block" : "md:hidden"
+          } border-r border-(--border-hairline) overflow-y-auto shrink-0 bg-(--surface-sidebar) max-md:w-full!`}
+        >
+          <FileTree
+            tree={tree}
+            activeFileId={activeId}
+            onOpenFile={openFile}
+            onCreateNode={createNode}
+            onRenameNode={renameNode}
+            onDeleteNode={deleteNode}
+          />
+        </div>
+        <div
+          onMouseDown={sidebarResize.startDrag}
+          title="Drag to resize"
+          className={`hidden ${sidebarVisible ? "md:block" : ""} w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10`}
+        >
+          <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
+        </div>
 
-        <div className="flex-1 flex flex-col min-w-0">
+        <div
+          className={`${mobilePanel === "editor" ? "flex" : "hidden"} md:flex flex-1 flex-col min-w-0`}
+        >
           <Tabs
             tabs={openFiles.map(({ id, name, dirty }) => ({ id, name, dirty }))}
             activeId={activeId}
@@ -482,11 +488,14 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         <div
           onMouseDown={consoleResize.startDrag}
           title="Drag to resize"
-          className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
+          className="hidden md:block w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
         >
           <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
         </div>
-        <div style={{ width: consoleResize.width }} className="shrink-0 flex flex-col">
+        <div
+          style={{ width: consoleResize.width }}
+          className={`${mobilePanel === "console" ? "flex" : "hidden"} md:flex flex-col shrink-0 max-md:w-full!`}
+        >
           <div className="flex items-center h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide">
             <button
               onClick={() => setRightPanel("console")}
@@ -512,6 +521,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           </div>
         </div>
       </div>
+
+      <MobileTabBar
+        active={mobilePanel}
+        onChange={setMobilePanel}
+        hasDirty={openFiles.some((f) => f.dirty)}
+      />
     </div>
   );
 }
