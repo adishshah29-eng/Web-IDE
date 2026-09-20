@@ -161,3 +161,13 @@ export function IconLaptop({ className = "" }: IconProps) {
     </svg>
   );
 }
+
+export function IconConsole({ className = "" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" className={`${base} ${className}`} fill="none">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M4 6.2L6.2 8L4 9.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7.6 9.8H10.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}

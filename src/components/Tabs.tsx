@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { IconClose, IconDot } from "@/components/icons";
 
 export interface OpenTab {
@@ -26,7 +25,7 @@ export default function Tabs({ tabs, activeId, onSelect, onClose }: TabsProps) {
   }
 
   return (
-    <div className="h-9 flex items-stretch border-b border-(--border-hairline) overflow-x-auto bg-(--surface-panel) shrink-0">
+    <div className="h-9 pointer-coarse:h-11 flex items-stretch border-b border-(--border-hairline) overflow-x-auto bg-(--surface-panel) shrink-0">
       {tabs.map((tab) => (
         <Tab
           key={tab.id}
@@ -51,8 +50,6 @@ function Tab({
   onSelect: () => void;
   onClose: () => void;
 }) {
-  const [hoveringClose, setHoveringClose] = useState(false);
-
   return (
     <div
       onClick={onSelect}
@@ -68,22 +65,26 @@ function Tab({
       <span className="truncate max-w-[160px]">{tab.name}</span>
 
       {/* Mac document-proxy convention: a dot for unsaved changes that becomes
-          the close control on hover, instead of a permanent x + separate dot. */}
+          the close control on hover, instead of a permanent x + separate dot.
+          On a touchscreen there's no hover, so pointer-coarse always shows
+          the close icon instead — a hidden-until-hover affordance is
+          undiscoverable on a phone. */}
       <button
         title={tab.dirty ? "Unsaved — click to close without saving" : "Close"}
         aria-label={`Close ${tab.name}`}
-        onMouseEnter={() => setHoveringClose(true)}
-        onMouseLeave={() => setHoveringClose(false)}
         onClick={(e) => {
           e.stopPropagation();
           onClose();
         }}
-        className={`flex items-center justify-center w-4 h-4 rounded-full shrink-0 ${
+        className={`group/close flex items-center justify-center w-4 h-4 pointer-coarse:w-6 pointer-coarse:h-6 rounded-full shrink-0 ${
           isActive ? "hover:bg-white/15" : "hover:bg-black/10 dark:hover:bg-white/10"
         }`}
       >
-        {tab.dirty && !hoveringClose ? (
-          <IconDot className="w-2.5 h-2.5" />
+        {tab.dirty ? (
+          <>
+            <IconDot className="w-2.5 h-2.5 group-hover/close:hidden pointer-coarse:hidden" />
+            <IconClose className="w-2.5 h-2.5 hidden group-hover/close:block pointer-coarse:block" />
+          </>
         ) : (
           <IconClose className="w-2.5 h-2.5" />
         )}

@@ -199,7 +199,7 @@ function FileTreeItem({
       <div
         role="button"
         tabIndex={0}
-        className={`group flex items-center gap-1.5 h-[26px] px-2 mx-1.5 rounded-md cursor-default ${
+        className={`group flex items-center gap-1.5 h-[26px] pointer-coarse:h-9 px-2 mx-1.5 rounded-md cursor-default ${
           isActive
             ? "bg-(--accent) text-white"
             : "text-(--text-primary) hover:bg-black/[.05] dark:hover:bg-white/[.06]"
@@ -243,7 +243,12 @@ function FileTreeItem({
           <span className="flex-1 truncate">{node.name}</span>
         )}
 
-        <div className={`hidden group-hover:flex gap-0.5 ${isActive ? "text-white/80" : "text-(--text-tertiary)"}`}>
+        {/* Hover-revealed on a mouse; pointer-coarse keeps them always visible
+            on a touchscreen, since hover is undiscoverable there and these
+            are the only way to create/delete nested items. */}
+        <div
+          className={`hidden group-hover:flex pointer-coarse:flex gap-0.5 ${isActive ? "text-white/80" : "text-(--text-tertiary)"}`}
+        >
           {isFolder && (
             <>
               <button
@@ -254,7 +259,7 @@ function FileTreeItem({
                   setExpanded(true);
                   onCreate(node.id, "file");
                 }}
-                className="p-0.5 rounded hover:bg-black/10"
+                className="p-0.5 pointer-coarse:p-1.5 rounded hover:bg-black/10"
               >
                 <IconPlus className="w-3 h-3" />
               </button>
@@ -266,7 +271,7 @@ function FileTreeItem({
                   setExpanded(true);
                   onCreate(node.id, "folder");
                 }}
-                className="p-0.5 rounded hover:bg-black/10"
+                className="p-0.5 pointer-coarse:p-1.5 rounded hover:bg-black/10"
               >
                 <IconFolderPlus className="w-3 h-3" />
               </button>
@@ -278,7 +283,7 @@ function FileTreeItem({
                   setExpanded(true);
                   onCreateFromTemplate(node.id);
                 }}
-                className="p-0.5 rounded hover:bg-black/10"
+                className="p-0.5 pointer-coarse:p-1.5 rounded hover:bg-black/10"
               >
                 <IconTemplate className="w-3 h-3" />
               </button>
@@ -291,7 +296,7 @@ function FileTreeItem({
               e.stopPropagation();
               handleDelete();
             }}
-            className="p-0.5 rounded hover:bg-black/10 hover:text-(--accent-stop)"
+            className="p-0.5 pointer-coarse:p-1.5 rounded hover:bg-black/10 hover:text-(--accent-stop)"
           >
             <IconTrash className="w-3 h-3" />
           </button>

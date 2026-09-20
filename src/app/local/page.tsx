@@ -8,6 +8,7 @@ import Editor, { type CursorPosition } from "@/components/Editor";
 import OutputPanel, { type RunResult } from "@/components/OutputPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import StatusBar from "@/components/StatusBar";
+import MobileTabBar, { type MobilePanel } from "@/components/MobileTabBar";
 import { findNode, type WorkspaceNode } from "@/lib/types";
 import { isRunnable } from "@/lib/languageMap";
 import { IconBack, IconPlay, IconFolder } from "@/components/icons";
@@ -75,6 +76,7 @@ export default function LocalFolderPage() {
   const [rightPanel, setRightPanel] = useState<"console" | "preview">("console");
   const [previewManifest, setPreviewManifest] = useState<Record<string, string> | null>(null);
   const [cursor, setCursor] = useState<CursorPosition | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("editor");
 
   const sidebarResize = useResizableWidth("ide.sidebarWidth", 240, 160, 480, "right");
   const consoleResize = useResizableWidth("ide.consoleWidth", 384, 240, 640, "left");
@@ -239,6 +241,7 @@ export default function LocalFolderPage() {
     if (node.type !== "file") return;
     if (openFilesRef.current.some((f) => f.id === node.id)) {
       setActiveId(node.id);
+      setMobilePanel("editor");
       return;
     }
     const entry = entriesRef.current.get(node.id);
@@ -250,6 +253,7 @@ export default function LocalFolderPage() {
       const content = await readLocalFile(entry.handle);
       setActiveId(node.id);
       setOpenFiles((prev) => [...prev, { id: node.id, name: node.name, content, dirty: false }]);
+      setMobilePanel("editor");
     } catch {
       toast.show("Couldn't read that file.", "error");
     }
@@ -416,6 +420,7 @@ export default function LocalFolderPage() {
     await saveActive();
     setRunning(true);
     setRunResult(null);
+    setMobilePanel("console");
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -444,7 +449,7 @@ export default function LocalFolderPage() {
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen bg-(--surface-panel) text-(--text-secondary) p-6 text-sm">
+      <div className="min-h-dvh bg-(--surface-panel) text-(--text-secondary) p-6 text-sm">
         Loading…
       </div>
     );
@@ -493,10 +498,12 @@ export default function LocalFolderPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-(--surface-panel) text-(--text-primary)">
-      <div className="h-11 grid grid-cols-3 items-center px-3 border-b border-(--border-hairline) bg-(--surface-toolbar) shrink-0">
+    <div className="h-dvh flex flex-col bg-(--surface-panel) text-(--text-primary)">
+      <div className="h-11 grid grid-cols-[auto_1fr_auto] md:grid-cols-3 items-center px-3 border-b border-(--border-hairline) bg-(--surface-toolbar) shrink-0">
         <div className="flex items-center gap-3">
-          <TrafficLights />
+          <span className="hidden sm:flex">
+            <TrafficLights />
+          </span>
           <Link
             href="/"
             title="Back to Projects"
@@ -526,32 +533,32 @@ export default function LocalFolderPage() {
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {sidebarVisible && (
-          <>
-            <div
-              style={{ width: sidebarResize.width }}
-              className="border-r border-(--border-hairline) overflow-y-auto shrink-0 bg-(--surface-sidebar)"
-            >
-              <FileTree
-                tree={tree}
-                activeFileId={activeId}
-                onOpenFile={openFile}
-                onCreateNode={createNode}
-                onRenameNode={renameNode}
-                onDeleteNode={deleteNode}
-              />
-            </div>
-            <div
-              onMouseDown={sidebarResize.startDrag}
-              title="Drag to resize"
-              className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
-            >
-              <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
-            </div>
-          </>
-        )}
+        <div
+          style={{ width: sidebarResize.width }}
+          className={`${mobilePanel === "files" ? "block" : "hidden"} ${
+            sidebarVisible ? "md:block" : "md:hidden"
+          } border-r border-(--border-hairline) overflow-y-auto shrink-0 bg-(--surface-sidebar) max-md:w-full!`}
+        >
+          <FileTree
+            tree={tree}
+            activeFileId={activeId}
+            onOpenFile={openFile}
+            onCreateNode={createNode}
+            onRenameNode={renameNode}
+            onDeleteNode={deleteNode}
+          />
+        </div>
+        <div
+          onMouseDown={sidebarResize.startDrag}
+          title="Drag to resize"
+          className={`hidden ${sidebarVisible ? "md:block" : ""} w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10`}
+        >
+          <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
+        </div>
 
-        <div className="flex-1 flex flex-col min-w-0">
+        <div
+          className={`${mobilePanel === "editor" ? "flex" : "hidden"} md:flex flex-1 flex-col min-w-0`}
+        >
           <Tabs
             tabs={openFiles.map(({ id, name, dirty }) => ({ id, name, dirty }))}
             activeId={activeId}
@@ -581,11 +588,14 @@ export default function LocalFolderPage() {
         <div
           onMouseDown={consoleResize.startDrag}
           title="Drag to resize"
-          className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
+          className="hidden md:block w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
         >
           <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
         </div>
-        <div style={{ width: consoleResize.width }} className="shrink-0 flex flex-col">
+        <div
+          style={{ width: consoleResize.width }}
+          className={`${mobilePanel === "console" ? "flex" : "hidden"} md:flex flex-col shrink-0 max-md:w-full!`}
+        >
           <div className="flex items-center h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide">
             <button
               onClick={() => setRightPanel("console")}
@@ -611,6 +621,12 @@ export default function LocalFolderPage() {
           </div>
         </div>
       </div>
+
+      <MobileTabBar
+        active={mobilePanel}
+        onChange={setMobilePanel}
+        hasDirty={openFiles.some((f) => f.dirty)}
+      />
     </div>
   );
 }
@@ -625,7 +641,7 @@ function CenteredMessage({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-(--surface-panel) text-(--text-primary) p-6">
+    <div className="min-h-dvh flex items-center justify-center bg-(--surface-panel) text-(--text-primary) p-6">
       <div className="max-w-sm text-center">
         <h1 className="text-[17px] font-semibold mb-2">{title}</h1>
         <p className="text-(--text-secondary) text-[13px] leading-relaxed">{message}</p>
