@@ -11,6 +11,7 @@ import AgentPanel from "@/components/AgentPanel";
 import TerminalPanel from "@/components/TerminalPanel";
 import ActivityBar from "@/components/ActivityBar";
 import StatusBar from "@/components/StatusBar";
+import MobileTabBar, { type MobilePanel } from "@/components/MobileTabBar";
 import { findNode, type Project, type TreeNode, type WorkspaceNode } from "@/lib/types";
 import { isRunnable } from "@/lib/languageMap";
 import { parseErrorBody } from "@/lib/http";
@@ -19,6 +20,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useDialog } from "@/components/DialogProvider";
 import { useResizableWidth } from "@/lib/useResizableWidth";
 import { useResizableHeight } from "@/lib/useResizableHeight";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { flattenTreeWithPaths, hasHtmlEntry, isPreviewableFile, pickPreviewEntry } from "@/lib/previewFiles";
 import type { AgentFileContext } from "@/lib/agent/useAgent";
 import { ensureParentFolder } from "@/lib/agent/pathOps";
@@ -94,6 +96,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     }
   };
   const [cursor, setCursor] = useState<CursorPosition | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("editor");
+  const isMobile = useIsMobile();
 
   const sidebarResize = useResizableWidth("ide.sidebarWidth", 240, 160, 480, "right");
   const consoleResize = useResizableWidth("ide.consoleWidth", 384, 240, 640, "left");
@@ -203,6 +207,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       if (prev.some((f) => f.id === node.id)) return prev;
       return [...prev, { id: node.id, name: node.name, content: full?.content ?? "", dirty: false }];
     });
+    setMobilePanel("editor");
   };
 
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -485,6 +490,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     await saveActive();
     setRunning(true);
     setRunResult(null);
+    setMobilePanel("console");
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -513,18 +519,18 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
   if (loading) {
     return (
-      <div className="h-screen flex flex-col bg-(--surface-panel)">
+      <div className="h-dvh flex flex-col bg-(--surface-panel)">
         <div className="h-11 flex items-center px-3 border-b border-(--border-hairline) bg-(--surface-toolbar) shrink-0">
           <TrafficLights />
         </div>
         <div className="flex flex-1 min-h-0">
-          <div className="w-60 border-r border-(--border-hairline) bg-(--surface-sidebar) p-3 space-y-2">
+          <div className="hidden md:block w-60 border-r border-(--border-hairline) bg-(--surface-sidebar) p-3 space-y-2">
             {[85, 60, 70, 45, 65].map((w, i) => (
               <div key={i} className="h-3 rounded bg-black/[.06] dark:bg-white/[.08] animate-pulse" style={{ width: `${w}%` }} />
             ))}
           </div>
           <div className="flex-1 bg-(--surface-editor)" />
-          <div className="w-96 border-l border-(--border-hairline) bg-(--surface-editor)" />
+          <div className="hidden md:block w-96 border-l border-(--border-hairline) bg-(--surface-editor)" />
         </div>
       </div>
     );
@@ -532,7 +538,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-(--surface-panel) text-(--text-primary) p-6 text-sm">
+      <div className="min-h-dvh bg-(--surface-panel) text-(--text-primary) p-6 text-sm">
         <div className="max-w-md">
           <p className="text-(--accent-stop) mb-3">{error}</p>
           <Link
@@ -546,11 +552,65 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     );
   }
 
+  // Built once and shared by the desktop and mobile layouts below, so the two
+  // can't drift apart — they only differ in how these panes are arranged.
+  const fileTreeEl = (
+    <FileTree
+      tree={tree}
+      activeFileId={activeId}
+      onOpenFile={openFile}
+      onCreateNode={createNode}
+      onRenameNode={renameNode}
+      onDeleteNode={deleteNode}
+    />
+  );
+
+  const editorPaneEl = (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <Tabs
+        tabs={openFiles.map(({ id, name, dirty }) => ({ id, name, dirty }))}
+        activeId={activeId}
+        onSelect={setActiveId}
+        onClose={closeTab}
+      />
+      <div className="flex-1 min-h-0">
+        {activeFile ? (
+          <Editor
+            key={activeFile.id}
+            filename={activeFile.name}
+            value={activeFile.content}
+            onChange={updateContent}
+            onCursorChange={setCursor}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center bg-(--surface-editor) text-neutral-600 text-sm">
+            {openFiles.length === 0 && tree.length === 0
+              ? "Add a file to get started"
+              : "Select a file to start editing"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderRightPanel = (kind: "console" | "preview" | "agent") =>
+    kind === "console" ? (
+      <OutputPanel running={running} result={runResult} />
+    ) : kind === "preview" ? (
+      <PreviewPanel manifest={previewManifest} entryPath={previewEntryPath} devServerUrl={devServerUrl} />
+    ) : (
+      <AgentPanel ctx={agentCtx} storageKey={projectId} onRunningChange={setAgentBusy} />
+    );
+
+  const terminalEl = <TerminalPanel source={agentCtx} onSync={loadTree} />;
+
   return (
-    <div className="h-screen flex flex-col bg-(--surface-panel) text-(--text-primary)">
-      <div className="h-11 grid grid-cols-3 items-center px-3 border-b border-(--border-hairline) bg-(--titlebar-bg) shrink-0">
+    <div className="h-dvh flex flex-col bg-(--surface-panel) text-(--text-primary)">
+      <div className="h-11 grid grid-cols-[auto_1fr_auto] md:grid-cols-3 items-center px-3 border-b border-(--border-hairline) bg-(--titlebar-bg) shrink-0">
         <div className="flex items-center gap-3">
-          <TrafficLights />
+          <span className="hidden sm:flex">
+            <TrafficLights />
+          </span>
           <Link
             href="/"
             title="Back to Projects"
@@ -579,144 +639,129 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <div className="flex flex-1 min-h-0">
-        <ActivityBar
-          explorerOpen={sidebarVisible}
-          onToggleExplorer={() => setSidebarVisible((v) => !v)}
-          rightPanelKey={rightPanel}
-          rightPanelOpen={rightPanelVisible}
-          onSelectRightPanel={selectRightPanel}
-          terminalOpen={terminalVisible}
-          onToggleTerminal={() => setTerminalVisible((v) => !v)}
+        {isMobile ? (
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            {mobilePanel === "files" && (
+              <div className="flex-1 min-h-0 overflow-y-auto bg-(--surface-sidebar)">{fileTreeEl}</div>
+            )}
+            {mobilePanel === "editor" && editorPaneEl}
+            {(mobilePanel === "console" || mobilePanel === "preview" || mobilePanel === "agent") && (
+              <div className="flex-1 min-h-0">{renderRightPanel(mobilePanel)}</div>
+            )}
+            {mobilePanel === "terminal" && <div className="flex-1 min-h-0 bg-[#1e1e1e]">{terminalEl}</div>}
+          </div>
+        ) : (
+          <>
+            <ActivityBar
+              explorerOpen={sidebarVisible}
+              onToggleExplorer={() => setSidebarVisible((v) => !v)}
+              rightPanelKey={rightPanel}
+              rightPanelOpen={rightPanelVisible}
+              onSelectRightPanel={selectRightPanel}
+              terminalOpen={terminalVisible}
+              onToggleTerminal={() => setTerminalVisible((v) => !v)}
+              previewDisabled={!canPreview && !devServerUrl}
+              agentBusy={agentBusy}
+            />
+
+            {!panelMaximized && (
+              <div className="flex-1 flex flex-col min-w-0 min-h-0">
+                <div className="flex-1 flex min-h-0">
+                  {sidebarVisible && (
+                    <>
+                      <div
+                        style={{ width: sidebarResize.width }}
+                        className="border-r border-(--border-hairline) overflow-y-auto shrink-0 bg-(--surface-sidebar)"
+                      >
+                        {fileTreeEl}
+                      </div>
+                      <div
+                        onMouseDown={sidebarResize.startDrag}
+                        title="Drag to resize"
+                        className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
+                      >
+                        <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
+                      </div>
+                    </>
+                  )}
+                  {editorPaneEl}
+                </div>
+
+                {terminalVisible && (
+                  <>
+                    <div
+                      onMouseDown={terminalResize.startDrag}
+                      title="Drag to resize"
+                      className="h-2 -my-0.5 shrink-0 cursor-row-resize group relative z-10"
+                    >
+                      <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
+                    </div>
+                    <div
+                      style={{ height: terminalResize.height }}
+                      className="shrink-0 flex flex-col border-t border-(--border-hairline)"
+                    >
+                      <div className="flex items-center justify-between h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide text-(--text-secondary)">
+                        <span className="px-3">Terminal</span>
+                        <button
+                          title="Close terminal"
+                          aria-label="Close terminal"
+                          onClick={() => setTerminalVisible(false)}
+                          className="mr-2 p-1 rounded normal-case text-(--text-tertiary) hover:bg-white/10 hover:text-(--text-primary)"
+                        >
+                          <IconClose className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="flex-1 min-h-0">{terminalEl}</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {!panelMaximized && rightPanelVisible && (
+              <div
+                onMouseDown={consoleResize.startDrag}
+                title="Drag to resize"
+                className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
+              >
+                <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
+              </div>
+            )}
+            {rightPanelVisible && (
+              <div
+                style={panelMaximized ? undefined : { width: consoleResize.width }}
+                className={`flex flex-col ${panelMaximized ? "flex-1 min-w-0" : "shrink-0"}`}
+              >
+                <div className="flex items-center justify-between h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide text-(--text-secondary)">
+                  <span className="px-3">{PANEL_LABELS[rightPanel]}</span>
+                  <button
+                    title={panelMaximized ? "Restore layout" : "Maximize panel"}
+                    aria-label={panelMaximized ? "Restore layout" : "Maximize panel"}
+                    onClick={() => setPanelMaximized((v) => !v)}
+                    className="mr-2 p-1 rounded normal-case text-(--text-tertiary) hover:bg-white/10 hover:text-(--text-primary)"
+                  >
+                    {panelMaximized ? <IconMinimize className="w-3.5 h-3.5" /> : <IconMaximize className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0">{renderRightPanel(rightPanel)}</div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {(!isMobile || mobilePanel === "editor") && (
+        <StatusBar filename={activeFile?.name ?? null} cursor={activeFile ? cursor : null} />
+      )}
+      {isMobile && (
+        <MobileTabBar
+          active={mobilePanel}
+          onChange={setMobilePanel}
+          hasDirty={openFiles.some((f) => f.dirty)}
           previewDisabled={!canPreview && !devServerUrl}
           agentBusy={agentBusy}
         />
-
-        {!panelMaximized && (
-          <div className="flex-1 flex flex-col min-w-0 min-h-0">
-            <div className="flex-1 flex min-h-0">
-              {sidebarVisible && (
-                <>
-                  <div
-                    style={{ width: sidebarResize.width }}
-                    className="border-r border-(--border-hairline) overflow-y-auto shrink-0 bg-(--surface-sidebar)"
-                  >
-                    <FileTree
-                      tree={tree}
-                      activeFileId={activeId}
-                      onOpenFile={openFile}
-                      onCreateNode={createNode}
-                      onRenameNode={renameNode}
-                      onDeleteNode={deleteNode}
-                    />
-                  </div>
-                  <div
-                    onMouseDown={sidebarResize.startDrag}
-                    title="Drag to resize"
-                    className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
-                  >
-                    <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
-                  </div>
-                </>
-              )}
-
-              <div className="flex-1 flex flex-col min-w-0">
-                <Tabs
-                  tabs={openFiles.map(({ id, name, dirty }) => ({ id, name, dirty }))}
-                  activeId={activeId}
-                  onSelect={setActiveId}
-                  onClose={closeTab}
-                />
-                <div className="flex-1 min-h-0">
-                  {activeFile ? (
-                    <Editor
-                      key={activeFile.id}
-                      filename={activeFile.name}
-                      value={activeFile.content}
-                      onChange={updateContent}
-                      onCursorChange={setCursor}
-                    />
-                  ) : (
-                    <div className="h-full flex items-center justify-center bg-(--surface-editor) text-neutral-600 text-sm">
-                      {openFiles.length === 0 && tree.length === 0
-                        ? "Add a file to get started"
-                        : "Select a file to start editing"}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {terminalVisible && (
-              <>
-                <div
-                  onMouseDown={terminalResize.startDrag}
-                  title="Drag to resize"
-                  className="h-2 -my-0.5 shrink-0 cursor-row-resize group relative z-10"
-                >
-                  <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
-                </div>
-                <div
-                  style={{ height: terminalResize.height }}
-                  className="shrink-0 flex flex-col border-t border-(--border-hairline)"
-                >
-                  <div className="flex items-center justify-between h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide text-(--text-secondary)">
-                    <span className="px-3">Terminal</span>
-                    <button
-                      title="Close terminal"
-                      aria-label="Close terminal"
-                      onClick={() => setTerminalVisible(false)}
-                      className="mr-2 p-1 rounded normal-case text-(--text-tertiary) hover:bg-white/10 hover:text-(--text-primary)"
-                    >
-                      <IconClose className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <div className="flex-1 min-h-0">
-                    <TerminalPanel source={agentCtx} onSync={loadTree} />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {!panelMaximized && rightPanelVisible && (
-          <div
-            onMouseDown={consoleResize.startDrag}
-            title="Drag to resize"
-            className="w-2 -mx-0.5 shrink-0 cursor-col-resize group relative z-10"
-          >
-            <span className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-transparent group-hover:bg-(--accent)/50 group-active:bg-(--accent)" />
-          </div>
-        )}
-        {rightPanelVisible && (
-          <div
-            style={panelMaximized ? undefined : { width: consoleResize.width }}
-            className={`flex flex-col ${panelMaximized ? "flex-1 min-w-0" : "shrink-0"}`}
-          >
-            <div className="flex items-center justify-between h-8 border-b border-(--border-hairline) bg-(--surface-panel) shrink-0 text-[11px] font-semibold uppercase tracking-wide text-(--text-secondary)">
-              <span className="px-3">{PANEL_LABELS[rightPanel]}</span>
-              <button
-                title={panelMaximized ? "Restore layout" : "Maximize panel"}
-                aria-label={panelMaximized ? "Restore layout" : "Maximize panel"}
-                onClick={() => setPanelMaximized((v) => !v)}
-                className="mr-2 p-1 rounded normal-case text-(--text-tertiary) hover:bg-white/10 hover:text-(--text-primary)"
-              >
-                {panelMaximized ? <IconMinimize className="w-3.5 h-3.5" /> : <IconMaximize className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            <div className="flex-1 min-h-0">
-              {rightPanel === "console" ? (
-                <OutputPanel running={running} result={runResult} />
-              ) : rightPanel === "preview" ? (
-                <PreviewPanel manifest={previewManifest} entryPath={previewEntryPath} devServerUrl={devServerUrl} />
-              ) : (
-                <AgentPanel ctx={agentCtx} storageKey={projectId} onRunningChange={setAgentBusy} />
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-      <StatusBar filename={activeFile?.name ?? null} cursor={activeFile ? cursor : null} />
+      )}
     </div>
   );
 }

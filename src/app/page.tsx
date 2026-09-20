@@ -112,7 +112,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col flex-1 items-center bg-(--surface-panel) text-(--text-primary) min-h-screen px-6 py-20">
+    <div className="flex flex-col flex-1 items-center bg-(--surface-panel) text-(--text-primary) min-h-dvh px-6 py-10 sm:py-20">
       <div className="w-full max-w-xl">
         <h1 className="text-[28px] font-semibold tracking-tight mb-1">Online IDE</h1>
         <p className="text-(--text-secondary) text-[13px] mb-8">
@@ -198,7 +198,7 @@ export default function Home() {
                 aria-label={`Delete ${p.name}`}
                 onClick={() => deleteProject(p)}
                 disabled={deletingId === p.id}
-                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-md text-(--text-tertiary) hover:text-(--accent-stop) hover:bg-(--accent-stop)/10 transition disabled:opacity-60"
+                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 p-1.5 rounded-md text-(--text-tertiary) hover:text-(--accent-stop) hover:bg-(--accent-stop)/10 transition disabled:opacity-60"
               >
                 <IconTrash className="w-3.5 h-3.5" />
               </button>

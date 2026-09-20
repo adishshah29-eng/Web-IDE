@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconRefresh, IconPhone, IconTablet, IconLaptop, IconExternalLink } from "@/components/icons";
 import { buildSelfContainedHtml } from "@/lib/previewFiles";
 
@@ -22,6 +22,13 @@ const DEVICES: Record<DeviceKey, { width: number; height: number; label: string;
 export default function PreviewPanel({ manifest, entryPath, devServerUrl }: PreviewPanelProps) {
   const [reloadKey, setReloadKey] = useState(0);
   const [device, setDevice] = useState<DeviceKey>("laptop");
+
+  // A phone screen can't usefully show the 1280px "laptop" frame without a
+  // lot of pinch-zooming, so default to the frame that actually fits.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time viewport check on mount to pick a sane initial device size
+    if (window.innerWidth < 768) setDevice("phone");
+  }, []);
 
   const srcDoc = useMemo(() => {
     if (!manifest || !entryPath) return null;
